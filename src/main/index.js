@@ -54,6 +54,7 @@ function createWindow() {
     show: false,
     autoHideMenuBar: true,
     ...(process.platform === 'linux' ? { icon } : {}),
+    icon: join(__dirname, '../renderer/src/assets/icon.png'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,

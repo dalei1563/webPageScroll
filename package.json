@@ -1,9 +1,10 @@
 {
   "name": "webpagescroll",
-  "version": "1.0.0",
-  "description": "An Electron application with Vue",
+  "version": "1.0.1",
+  "description": "网页轮播工具",
+  "productName": "网页轮播工具",
   "main": "./out/main/index.js",
-  "author": "example.com",
+  "author": "田永军",
   "homepage": "https://electron-vite.org",
   "scripts": {
     "format": "prettier --write .",

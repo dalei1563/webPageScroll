@@ -11,6 +11,7 @@ files:
 asarUnpack:
   - resources/**
 win:
+  icon: build/icon.ico
   executableName: webpagescroll
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
