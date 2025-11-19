@@ -48,9 +48,20 @@
         <div class="panel-row">
           <n-space>
             <n-button size="small" type="primary" @click="duplicate">复制当前页</n-button>
+            <n-button size="small" type="error" @click="deleteCurrent">删除当前页</n-button>
             <n-button size="small" strong secondary @click="lastIndex">上一页</n-button>
             <n-button size="small" strong secondary @click="nextIndex">下一页</n-button>
           </n-space>
+        </div>
+        <div class="panel-row">
+          <n-space>
+            <span>下次打开时，使用配置</span>
+            <n-switch v-model:value="enable_preset_settings" />
+            <n-button size="small" type="primary" @click="saveConfig">保存当前配置</n-button>
+          </n-space>
+        </div>
+        <div class="panel-row">
+          <span>日志：{{ logContent }}</span>
         </div>
       </n-space>
     </n-card>
@@ -58,13 +69,13 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted, nextTick } from 'vue'
-import { NCard, NButton, NInputNumber, NSwitch, NSpace, useMessage, NInput } from 'naive-ui'
+import { ref, watch, onMounted, nextTick, toRaw } from 'vue'
+import { NCard, NButton, NInputNumber, NSwitch, NSpace, NInput } from 'naive-ui'
 
 const slides = ref([
   {
     id: Date.now(),
-    url: 'https://app.powerbi.cn/reportEmbed?reportId=02392115-a479-4eae-b93c-cc00ba195b11&autoAuth=true&ctid=26c29e36-ada6-4acf-ae8a-a32733c108f3&navContentPaneEnabled=false'
+    url: 'https://app.powerbi.cn/'
   }
 ])
 
@@ -76,6 +87,8 @@ const loopactive = ref(false)
 const setUrl = ref(null)
 // 存储每个 webview DOM 引用
 const webviewRefs = ref([])
+const enable_preset_settings = ref(false)
+const logContent = ref(null)
 
 const setWebviewRef = (el, index) => {
   if (el) {
@@ -91,17 +104,17 @@ const getNextWebview = () => {
 
 const updateCurrentUrl = () => {
   const url = setUrl.value.trim()
-  const msg = useMessage()
+
   if (!url) {
-    msg.error('URL 不能为空')
+    console.log('URL 不能为空')
     return
   }
   if (!/^https?:\/\//i.test(url)) {
-    msg.warning('建议输入完整 URL（如 https:// 开头）')
+    console.log('建议输入完整 URL（如 https:// 开头）')
   }
 
   slides.value[currentIndex.value].url = url
-  msg.success('URL 已更新，即将重新加载...')
+  console.log('URL 已更新，即将重新加载...')
 
   // 立即刷新当前页面
   nextTick(() => {
@@ -180,6 +193,36 @@ function duplicate() {
   })
 }
 
+function deleteCurrent() {
+  if (slides.value.length <= 1) {
+    logContent.value = '至少要保留一个页面，不能删除'
+    return
+  }
+
+  // 删除当前页面
+  slides.value.splice(currentIndex.value, 1)
+
+  // 调整当前索引
+  if (currentIndex.value >= slides.value.length) {
+    // 如果删的是最后一页，跳到新最后一页
+    currentIndex.value = slides.value.length - 1
+  }
+  // 如果删的是中间页，保持索引（Vue 会自动向下对齐）
+
+  logContent.value = `已删除页面，剩余 ${slides.value.length} 个`
+}
+const saveConfig = async () => {
+  const plainConfig = {
+    enable_preset_settings: enable_preset_settings.value,
+    slides: toRaw(slides.value)
+  }
+
+  const success = await window.api.saveConfig(plainConfig)
+  if (success) {
+    logContent.value = '保存成功'
+  }
+}
+
 // 监听轮播开关
 watch(loopactive, (val) => {
   if (val) {
@@ -207,6 +250,16 @@ onMounted(() => {
       showpanel.value = !showpanel.value
     })
   }
+})
+
+onMounted(() => {
+  window.api.onConfigLoaded((loadedConfig) => {
+    enable_preset_settings.value = loadedConfig.enable_preset_settings
+    if (enable_preset_settings.value) {
+      slides.value = loadedConfig.slides
+    }
+    console.log('配置已加载：', loadedConfig)
+  })
 })
 </script>
 
