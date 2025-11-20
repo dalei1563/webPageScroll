@@ -26,7 +26,10 @@ const api = {
   // 可选：移除监听
   removeAllListeners: (channel) => {
     ipcRenderer.removeAllListeners(channel)
-  }
+  },
+
+  // 复制文本到剪贴板
+  copyToClipboard: (text) => ipcRenderer.invoke('copy-to-clipboard', text)
 }
 
 if (process.contextIsolated) {

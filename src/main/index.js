@@ -13,7 +13,7 @@ const CONFIG_PATH = join(APP_DIR, 'config.json')
 
 // 默认配置
 const defaultConfig = {
-  enable_preset_settings: false,
+  timeinterval: 10,
   slides: []
 }
 
@@ -131,4 +131,9 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
+})
+// 复制文本到剪贴板
+ipcMain.handle('copy-to-clipboard', (event, text) => {
+  const { clipboard } = require('electron')
+  clipboard.writeText(text)
 })

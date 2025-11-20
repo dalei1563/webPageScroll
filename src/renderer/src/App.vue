@@ -12,7 +12,8 @@
         :src="item.url"
         class="viewer"
         partition="persist:sharedState"
-        webpreferences="nativeWindowOpen=no"
+        webpreferences="nativeWindowOpen=no, backgroundThrottling=no, contextIsolation=yes"
+        disablehtmlfullscreenwindowresize
       ></webview>
     </div>
 
@@ -25,6 +26,8 @@
             <span>{{ currentIndex + 1 }} / {{ slides.length }}</span>
             <span>轮播开关：</span>
             <n-switch v-model:value="loopactive" />
+            <n-button size="small" strong secondary @click="lastIndex">上一页</n-button>
+            <n-button size="small" strong secondary @click="nextIndex">下一页</n-button>
           </n-space>
         </div>
         <div class="panel-row">
@@ -41,24 +44,15 @@
           <n-input
             v-model:value="setUrl"
             type="textarea"
-            placeholder="填写URL"
-            @keydown.enter="updateCurrentUrl"
+            placeholder="请输入URL，多个请换行，填写完成后点击保存并应用配置"
           />
         </div>
         <div class="panel-row">
-          <n-space>
-            <n-button size="small" type="primary" @click="duplicate">复制当前页</n-button>
-            <n-button size="small" type="error" @click="deleteCurrent">删除当前页</n-button>
-            <n-button size="small" strong secondary @click="lastIndex">上一页</n-button>
-            <n-button size="small" strong secondary @click="nextIndex">下一页</n-button>
-          </n-space>
-        </div>
-        <div class="panel-row">
-          <n-space>
-            <span>下次打开时，使用配置</span>
-            <n-switch v-model:value="enable_preset_settings" />
-            <n-button size="small" type="primary" @click="saveConfig">保存当前配置</n-button>
-          </n-space>
+          <n-button size="small" type="primary" @click="saveConfig">保存并应用配置</n-button>
+          <n-button size="small" type="warning" @click="resetConfig">重置配置</n-button>
+          <n-button size="small" type="info" @click="copyCurrentConfig"
+            >复制当前配置URL到剪贴板</n-button
+          >
         </div>
         <div class="panel-row">
           <span>日志：{{ logContent }}</span>
@@ -87,7 +81,6 @@ const loopactive = ref(false)
 const setUrl = ref(null)
 // 存储每个 webview DOM 引用
 const webviewRefs = ref([])
-const enable_preset_settings = ref(false)
 const logContent = ref(null)
 
 const setWebviewRef = (el, index) => {
@@ -101,33 +94,40 @@ const getNextWebview = () => {
   const nextIdx = (currentIndex.value + 1) % slides.value.length
   return webviewRefs.value[nextIdx]
 }
-
-const updateCurrentUrl = () => {
-  const url = setUrl.value.trim()
-
-  if (!url) {
-    console.log('URL 不能为空')
-    return
-  }
-  if (!/^https?:\/\//i.test(url)) {
-    console.log('建议输入完整 URL（如 https:// 开头）')
-  }
-
-  slides.value[currentIndex.value].url = url
-  console.log('URL 已更新，即将重新加载...')
-
-  // 立即刷新当前页面
-  nextTick(() => {
-    const webview = getCurrentWebview()
-    if (webview) {
-      webview.src = url // 直接改 src 最彻底
-      // 或者用 webview.reload()
+//应用配置，更新slides
+const updateSlides = () => {
+  // 按行拆分，去掉空行
+  const lines = setUrl.value
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+  const urlReg = /^https?:\/\/[^\s/$.?#].[^\s]*$/i
+  // URL 格式校验
+  for (const line of lines) {
+    if (!urlReg.test(line)) {
+      logContent.value = `URL 格式不正确：${line}`
+      return
     }
+  }
+
+  // 转换成对象数组
+  slides.value = lines.map((url, index) => ({
+    id: index + 1,
+    url
+  }))
+
+  // 立即刷新所有页面
+  nextTick(() => {
+    const webview = getAllWebviews()
+    webview.map((wb, index) => ({
+      ...wb,
+      src: slides.value[index].url
+    }))
   })
 }
 
-const getCurrentWebview = () => {
-  return webviewRefs.value[currentIndex.value]
+const getAllWebviews = () => {
+  return webviewRefs.value
 }
 
 // 开始轮播
@@ -137,7 +137,6 @@ function startLoop() {
     () => {
       // 1. 先切换到下一页
       currentIndex.value = (currentIndex.value + 1) % slides.value.length
-      setUrl.value = ''
       // 2. 等待 DOM 更新完成后，刷新下下个页面（预加载）
       nextTick(() => {
         const nextWebview = getNextWebview()
@@ -162,58 +161,17 @@ function stopLoop() {
 
 function nextIndex() {
   currentIndex.value = (currentIndex.value + 1) % slides.value.length
-  setUrl.value = ''
 }
 
 function lastIndex() {
   currentIndex.value = (currentIndex.value + slides.value.length - 1) % slides.value.length
-  setUrl.value = ''
 }
 
-function preloadNext() {
-  nextTick(() => {
-    const nextWebview = getNextWebview()
-    if (nextWebview && nextWebview.reload) {
-      setTimeout(() => {
-        if (!nextWebview.isLoading?.()) {
-          nextWebview.reload()
-        }
-      }, 800) // 延迟一点确保当前页面稳定显示
-    }
-  })
-}
-
-function duplicate() {
-  const cur = slides.value[currentIndex.value]
-  slides.value.push({ id: Date.now(), url: cur.url })
-  // 复制后自动跳到最后一页（新复制的）
-  nextTick(() => {
-    currentIndex.value = slides.value.length - 1
-    preloadNext()
-  })
-}
-
-function deleteCurrent() {
-  if (slides.value.length <= 1) {
-    logContent.value = '至少要保留一个页面，不能删除'
-    return
-  }
-
-  // 删除当前页面
-  slides.value.splice(currentIndex.value, 1)
-
-  // 调整当前索引
-  if (currentIndex.value >= slides.value.length) {
-    // 如果删的是最后一页，跳到新最后一页
-    currentIndex.value = slides.value.length - 1
-  }
-  // 如果删的是中间页，保持索引（Vue 会自动向下对齐）
-
-  logContent.value = `已删除页面，剩余 ${slides.value.length} 个`
-}
+// 保存配置到本地
 const saveConfig = async () => {
+  updateSlides()
   const plainConfig = {
-    enable_preset_settings: enable_preset_settings.value,
+    timeinterval: timeinterval.value,
     slides: toRaw(slides.value)
   }
 
@@ -221,6 +179,39 @@ const saveConfig = async () => {
   if (success) {
     logContent.value = '保存成功'
   }
+}
+//重置配置并保存本地
+const resetConfig = async () => {
+  timeinterval.value = 10
+  slides.value = [
+    {
+      id: Date.now(),
+      url: 'https://app.powerbi.cn/'
+    }
+  ]
+  nextTick(() => {
+    const webview = getAllWebviews()
+    webview.map((wb, index) => ({
+      ...wb,
+      src: slides.value[index].url
+    }))
+  })
+  const plainConfig = {
+    timeinterval: timeinterval.value,
+    slides: toRaw(slides.value)
+  }
+
+  const success = await window.api.saveConfig(plainConfig)
+  if (success) {
+    logContent.value = '重置成功'
+  }
+}
+
+//将当前配置中所有的URL复制到剪贴板
+const copyCurrentConfig = () => {
+  const urls = slides.value.map((slide) => slide.url).join('\n')
+  window.api.copyToClipboard(urls)
+  logContent.value = `当前配置中所有URL已复制到剪贴板`
 }
 
 // 监听轮播开关
@@ -254,10 +245,8 @@ onMounted(() => {
 
 onMounted(() => {
   window.api.onConfigLoaded((loadedConfig) => {
-    enable_preset_settings.value = loadedConfig.enable_preset_settings
-    if (enable_preset_settings.value) {
-      slides.value = loadedConfig.slides
-    }
+    timeinterval.value = loadedConfig.timeinterval || timeinterval.value
+    slides.value = loadedConfig.slides || slides.value
     console.log('配置已加载：', loadedConfig)
   })
 })
@@ -295,7 +284,7 @@ onMounted(() => {
   position: fixed;
   right: 40px;
   bottom: 40px;
-  width: 420px;
+  width: 500px;
   z-index: 1000;
   border-radius: 12px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
